@@ -1,0 +1,413 @@
+
+
+;; UTF-8 as default encoding
+(set-language-environment 'utf-8)
+(prefer-coding-system 'utf-8)
+(set-default-coding-systems 'utf-8)
+(set-selection-coding-system 'utf-8)
+(setq-default buffer-file-coding-system 'utf-8)
+(setq-default default-buffer-file-coding-system 'utf-8)
+
+
+
+;; Paul Johnson
+;; 2013-09-30
+
+;; Workaround for shift-enter trouble on Windows
+
+;; UPDATE: Because Emacs ESS changes made this MUCH easier, my
+;; re-work gets shorter :=)
+
+
+;; INSTRUCTIONS. Put this file in ~/.emacs, or in ~/emacs.d/init.el,
+;; or in the Emacs site-start.d folder.
+
+;; R USER PREVIEW.
+;; Here are my special features related to ESS with R.
+
+;; 1. Indentation policy follows Programming R Extensions Manual
+;; UPDATE 2013-07-10. No longer needed. This is ESS default as of version 13-05
+
+;; 2. Shift+Enter will send the current line to R, and it will start R
+;; if it is not running.  ESS 13-05 chose instead CTL+Enter, which I
+;; DO NOT want because it conflicts with CUA mode.
+
+;; 3. R will assume the current working directory is the document directory.
+
+;; 4. R runs in its own "frame"
+
+;; 5. Emacs help pops up in its own frame.
+
+
+;; JUSTIFICATION.  The intention is to make Emacs work more like a
+;; "modern" GUI editor.
+;; See my companion lecture
+;; "Emacs Has No Learning Curve"
+;; http://pj.freefaculty.org/guides/Rcourse
+
+
+;; Paul Johnson <pauljohn@ku.edu>
+;; 2012-11-24
+;;
+;; Conflicts between Emacs-ESS and SAS usage forced me to make
+;; some changes. And for no benefit, as SAS mode still not great.
+;; I had to cut out a lot of framepop stuff.
+;;
+
+;; Source: http://www.emacswiki.org/emacs-en/download/misc-cmds.el
+(defun revert-buffer-no-confirm ()
+    "Revert buffer without confirmation."
+    (interactive)
+    (revert-buffer :ignore-auto :noconfirm))
+
+;; Section I. Windows OS work-arounds
+
+;;(if (eq system-type 'windows-nt)
+;;    (setq use-file-dialog nil))
+;; There's been a chronic problem with file selection dialogs on Windows
+;; Maybe you commment previous out and see if your Windows is fixed.
+
+
+;; Section II. Keyboard and mouse customization
+;; IIA: make mouse selection work in the usual Mac/Windows way
+;; 2013-07-10 Comment these out
+;; (setq shift-select-mode t) ; is default in Emacs 23+, replaces pc-select
+;; (transient-mark-mode t) ; highlight text selection, is default Emacs 23+
+
+;; Added by Package.el.  This must come before configurations of
+;; installed packages.  Don't delete this line.  If you don't want it,
+;; just comment it out by adding a semicolon to the start of the line.
+;; You may delete these explanatory comments.
+(package-initialize)
+
+(delete-selection-mode t) ; delete selected text when typing
+
+
+;; http://ergoemacs.org/emacs/emacs24_features.html
+;; after copy Ctrl+c in X11 apps, you can paste by `yank' in emacs
+;; (setq x-select-enable-clipboard t)
+
+;; after mouse selection in X11, you can paste by `yank' in emacs
+;;(setq x-select-enable-primary t)
+;; This seems not reliable to me (2013-07-10)
+
+;; TODO:
+;; Figure out Emacs-24 trouble with mouse selections. I need to
+;; figure out where the truth lies
+
+;; In Linux, I see weirdness in Emacs 24 with paste and clipboard. Confusing!
+;; http://stackoverflow.com/questions/13036155/how-to-to-combine-emacs-primary-clipboard-copy-and-paste-behavior-on-ms-windows
+(setq select-active-regions t)
+(global-set-key [mouse-2] 'mouse-yank-primary)  ; make mouse middle-click only paste from primary X11 selection, not clipboard and kill ring.
+
+;;(setq mouse-drag-copy-region t)
+;; See following http://emacswiki.org/emacs/CopyAndPaste
+;; where there is a ton of really confusing advice.
+
+;; highlight does not alter KILL ring
+(setq mouse-drag-copy-region nil)
+
+
+;; IIB: keyboard customization
+
+;; CUA mode is helpful not only for copy and paste, but also C-Enter is rectangle select
+(cua-mode t) ; windows style binding C-x, C-v, C-c, C-z
+(setq cua-auto-tabify-rectangles nil) ;; Don't tabify after rectangle commands
+;;20130717(setq cua-keep-region-after-copy t) ;; Selection remains after C-c
+
+;; write line numbers on left of window
+;; Caution: if you do this, it makes Emacs much slower!
+;;(global-linum-mode 1) ; always show line numbers
+
+
+;; Section III. Programming conveniences:
+(show-paren-mode t) ; light-up matching parens
+(global-font-lock-mode t) ; turn on syntax highlighting
+(setq text-mode-hook (quote (turn-on-auto-fill text-mode-hook-identify)))
+
+
+
+;; Section IV. ESS Emacs Statistics
+
+(autoload 'R-mode "ess-site.el" "ESS" t)
+(add-to-list 'auto-mode-alist '("\\.R$" . R-mode))
+
+;;R stuff
+(setq ess-eval-visibly-p nil)
+(setq ess-ask-for-ess-directory nil)
+(require 'ess-eldoc)
+;;compile the first target in the Makefile in the current directory using F9
+(global-set-key [f9] 'compile)
+(setq compilation-read-command nil)
+
+
+;;show matching parentheses
+(show-paren-mode 1)
+
+;; start R in current working directory, don't let R ask user
+(setq ess-ask-for-ess-directory nil)
+
+;; ESS 13.05 default C-Ret conflicts with CUA mode rectangular selection.
+;; Change shortcut to use Shift-Return
+;; Suggested by Vitalie Spinu ESS-help email 2013-05-15
+;; worked in Linux, not Windows 2013-09-29
+;;(define-key ess-mode-map [(control return)] nil)
+;;(define-key ess-mode-map [(shift return)] 'ess-eval-region-or-line-and-step)
+
+;; cause "Shift+Enter" to send the current line to *R*
+(defun my-ess-eval ()
+  (interactive)
+  (if (and transient-mark-mode mark-active)
+      (call-interactively 'ess-eval-region)
+    (call-interactively 'ess-eval-line-and-step)))
+
+(add-hook 'ess-mode-hook
+          '(lambda()
+             (local-set-key [(shift return)] 'my-ess-eval)))
+
+
+
+;; create a new frame for each help instance
+;; (setq ess-help-own-frame t)
+;; If you want all help buffers to go into one frame do:
+(setq ess-help-own-frame 'one)
+
+;; I want the *R* process in its own frame
+;; This was a broken feature in ESS, fixed now. Helps massively!
+(setq inferior-ess-own-frame t)
+;;(setq inferior-ess-same-window nil)
+
+;; See no beauty in this. Test: move pointer into a function
+;; Run C-c C-d C-e to see effect
+;;(setq ess-describe-at-point-method 'tooltip)
+
+;; PJ 2013-07-10 Following commented out
+;; PJ 2012-03-21 because ESS 13.05 made it default
+;; Indentation per Programming R Extensions
+;; (add-hook 'ess-mode-hook
+;;    (lambda ()
+;;    (ess-set-style 'C++ 'quiet)
+;;    (add-hook 'local-write-file-hooks
+;;	      (lambda ()
+;;		(ess-nuke-trailing-whitespace)))))
+;;;;(setq ess-nuke-trailing-whitespace-p 'ask)
+;;;; or even
+;;(setq ess-nuke-trailing-whitespace-p t)
+;;; Perl
+;;(add-hook 'perl-mode-hook
+;;	  (lambda () (setq perl-indent-level 4)))
+;; End ESS
+
+
+;; In Spring 2012, we noticed ESS SAS mode doesn't work well
+;; at all on Windows, that lead to removal of lots of stuff
+;; I really liked. Even then, we couldn't get much satisfaction.
+;;
+;; Following was needed for that, otherwise, it is not needed
+;; (load "ess-site")
+;; (ess-sas-global-unix-keys)
+
+
+;; PJ 2013-02-28
+;; stops suggestions in R when tabbing. Quiets noise, but ruins feature
+;; (setq completion-auto-help nil)
+
+
+
+;; ;; ;; Section V. Customize the use of Frames. Try to make new content
+;; ;; ;; appear in wholly new frames on screen.
+;; ;; ;;
+;; ;; ;; V.A: Discourage Emacs from splitting "frames", encourage it to pop up new
+;; ;; ;; frames for new content.
+(setq split-window-preferred-function nil) ;discourage horizontal splits
+
+;; V.C: Make files opened from the menu bar appear in their own
+;; frames. This overrides the default menu bar settings.  Opening an
+;; existing file and creating new one in a new frame are the exact
+;; same operations.  adapted from Emacs menu-bar.el
+(defun menu-find-existing ()
+  "Edit the existing file FILENAME."
+  (interactive)
+  (let* ((mustmatch (not (and (fboundp 'x-uses-old-gtk-dialog)
+                              (x-uses-old-gtk-dialog))))
+         (filename (car (find-file-read-args "Find file: " mustmatch))))
+    (if mustmatch
+        (find-file-other-frame filename)
+      (find-file filename))))
+(define-key menu-bar-file-menu [new-file]
+  '(menu-item "Open/Create" find-file-other-frame
+	      :enable (menu-bar-non-minibuffer-window-p)
+	      :help "Create a new file"))
+(define-key menu-bar-file-menu [open-file]
+  '(menu-item ,(purecopy "Open File...") menu-find-existing
+              :enable (menu-bar-non-minibuffer-window-p)
+              :help ,(purecopy "Read an existing file into an Emacs buffer")))
+
+
+;; V.D  Open directory list in new frame.
+(define-key menu-bar-file-menu [dired]
+  '(menu-item "Open Directory..." dired-other-frame
+	      :help "Read a directory; operate on its files (Dired)"
+	      :enable (not (window-minibuffer-p (frame-selected-window menu-updating-frame)))))
+
+
+
+
+;; Section VI: Miscellaneous convenience
+
+;; Remove Emacs "splash screen"
+;; http://fuhm.livejournal.com/
+(defadvice command-line-normalize-file-name
+  (before kill-stupid-startup-screen activate)
+  (setq inhibit-startup-screen t))
+(setq inhibit-splash-screen t)
+
+
+;; Show file name in title bar
+;; http://www.thetechrepo.com/main-articles/549
+(setq frame-title-format "%b - Emacs")
+
+;; Make Emacs scroll smoothly with down arrow key.
+;; 2011-10-14
+;; faq 5.45 http://www.gnu.org/s/emacs/emacs-faq.html#Modifying-pull_002ddown-menus
+(setq scroll-conservatively most-positive-fixnum)
+
+
+;; adjust the size of the frames, uncomment this, adjust values
+;;(setq default-frame-alist '((width . 90) (height . 65)))
+
+
+;; Remember password when connected to remote sites via Tramp
+;; http://stackoverflow.com/questions/840279/passwords-in-emacs-tramp-mode-editing
+;; Emacs "tramp" service (ssh connection) constantly
+;; asks for the log in password without this
+(setq password-cache-expiry nil)
+
+
+;; Section : Emacs shells work better
+;; http://snarfed.org/why_i_run_shells_inside_emacs
+(setq ansi-color-for-comint-mode 'filter)
+(setq comint-prompt-read-only t)
+(setq comint-scroll-to-bottom-on-input t)
+(setq comint-scroll-to-bottom-on-output t)
+(setq comint-move-point-for-output t)
+(custom-set-variables
+ ;; custom-set-variables was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ '(ansi-color-faces-vector
+   [default default default italic underline success warning error])
+ '(ansi-color-names-vector
+   ["#242424" "#e5786d" "#95e454" "#cae682" "#8ac6f2" "#333366" "#ccaa8f" "#f6f3e8"])
+ '(custom-enabled-themes (quote (deeper-blue)))
+ '(ess-R-font-lock-keywords
+   (quote
+    ((ess-R-fl-keyword:modifiers . t)
+     (ess-R-fl-keyword:fun-defs . t)
+     (ess-R-fl-keyword:keywords . t)
+     (ess-R-fl-keyword:assign-ops . t)
+     (ess-R-fl-keyword:constants . t)
+     (ess-fl-keyword:fun-calls . t)
+     (ess-fl-keyword:numbers . t)
+     (ess-fl-keyword:operators . t)
+     (ess-fl-keyword:delimiters . t)
+     (ess-fl-keyword:= . t)
+     (ess-R-fl-keyword:F&T . t)
+     (ess-R-fl-keyword:%op% . t))))
+ '(package-selected-packages (quote (## org-plus-contrib))))
+(custom-set-faces
+ ;; custom-set-faces was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ )
+
+
+
+;; Section Org
+
+
+(require 'package)
+(add-to-list 'package-archives '("org" . "https://orgmode.org/elpa/") t)
+
+;; set key for agenda
+(global-set-key (kbd "C-c a") 'org-agenda)
+
+;;file to save todo items
+(setq org-agenda-files (quote ("/Users/bjm/todo.org")))
+
+;;set priority range from A to C with default A
+(setq org-highest-priority ?A)
+(setq org-lowest-priority ?C)
+(setq org-default-priority ?A)
+
+;;set colours for priorities
+(setq org-priority-faces '((?A . (:foreground "#F0DFAF" :weight bold))
+                           (?B . (:foreground "LightSteelBlue"))
+                           (?C . (:foreground "OliveDrab"))))
+
+;;open agenda in current window
+(setq org-agenda-window-setup (quote current-window))
+
+;;capture todo items using C-c c t
+(define-key global-map (kbd "C-c c") 'org-capture)
+(setq org-capture-templates
+      '(("t" "todo" entry (file+headline "/Users/bjm/todo.org" "Tasks")
+         "* TODO [#A] %?")))
+(put 'scroll-left 'disabled nil)
+
+
+
+;;Magit to git control
+(add-hook 'magit-post-refresh-hook 'diff-hl-magit-post-refresh)
+
+
+
+;; load emacs 24's package system. Add MELPA repository.
+(when (>= emacs-major-version 24)
+  (require 'package)
+  (add-to-list
+   'package-archives
+   ;; '("melpa" . "http://stable.melpa.org/packages/") ; many packages won't show if using stable
+   '("melpa" . "http://melpa.milkbox.net/packages/")
+   t))
+
+
+
+;; Other specific ESS settings
+(setq comint-input-ring-size 1000)
+(setq ess-indent-level 4)
+(setq ess-arg-function-offset 4)
+(setq ess-else-offset 4)
+
+(add-hook 'inferior-ess-mode-hook
+    '(lambda nil
+          (define-key inferior-ess-mode-map [\C-up]
+              'comint-previous-matching-input-from-input)
+          (define-key inferior-ess-mode-map [\C-down]
+              'comint-next-matching-input-from-input)
+          (define-key inferior-ess-mode-map [\C-x \t]
+              'comint-dynamic-complete-filename)
+     )
+ )
+
+;; (setq ess-ask-about-transfile t)
+
+
+(load-theme 'misterioso)
+
+
+(add-to-list 'load-path "C:/Users/romai/AppData/Roaming/.emacs.d/ess-knitr/")
+(require 'ess-knitr)
+(require 'poly-R)
+(require 'poly-markdown)
+
+
+
+
+;; Source: http://www.emacswiki.org/emacs-en/download/misc-cmds.el
+(defun revert-buffer-no-confirm ()
+    "Revert buffer without confirmation."
+    (interactive)
+    (revert-buffer :ignore-auto :noconfirm))
